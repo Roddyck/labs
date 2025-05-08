@@ -179,6 +179,9 @@ int main(int argc, char *argv[]) {
         part1(func1, solution1, x_0_first, y_0_first, 1.0);
         std::cout << "Second function" << std::endl; 
         part1(func2, solution2, x_0_first, y_0_first, 1.0);
+        std::cout << "Third function" << std::endl;
+        part1(func1, solution3, x_0_second, y_0_second, end_third);
+
     }
 
     if (std::string(argv[1]) == "2") {

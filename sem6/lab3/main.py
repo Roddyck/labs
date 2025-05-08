@@ -22,6 +22,7 @@ def first_euler_modification(f: Callable[[float, float], float], n: int, h: floa
     for i in range(n):
         x_medium = x + h / 2.0
         y_medium = y + h / 2.0 * f(x,y)
+        print(f"Med point {i+1}:", x_medium, y_medium)
         y += h * f(x_medium, y_medium)
         x += h
 
