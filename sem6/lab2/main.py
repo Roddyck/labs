@@ -1,6 +1,6 @@
 import math
-import matplotlib.pyplot as plt
-import numpy as np
+#import matplotlib.pyplot as plt
+#import numpy as np
 from typing import Callable
 
 
@@ -86,34 +86,34 @@ def f_prime_sec(x):
     return 6 * x
 
 
-a = -1.0/math.sqrt(5)
-b = 1.0/math.sqrt(5)
-x, points = newton(f, f_prime, f_prime_sec, a, b)
-print(points["x"][:2], points["y"][:2])
-xvalues = [points['x'][0], points['x'][0]]
-yvalues = [0, points['y'][0]]
-
-plt.plot([x / 10.0 for x in range(-5, 7)],
-         [f(x / 10.0) for x in range(-5, 7)],
-         'b-', label=r"x^3 - x")
-
-plt.plot(points['x'][0], 0, 'ro')
-plt.annotate(r"$x_0$", xy=(points['x'][0], 0), xytext=(points['x'][0], 0+0.01))
-plt.plot(points['x'][0], points["y"][0], 'ro')
-plt.annotate(r"$f(x_0)$", xy=(points['x'][0], points["y"][0]),
-             xytext=(points['x'][0], points["y"][0]+0.01))
-
-plt.plot(points['x'][1], 0, 'ro')
-plt.annotate(r"$x_1$", xy=(points['x'][1], 0), xytext=(points['x'][1], 0+0.01))
-plt.plot(points['x'][1], points["y"][1], 'ro')
-plt.annotate(r"$f(x_1)$", xy=(points['x'][0], points["y"][1]),
-             xytext=(points['x'][1], points["y"][1]+0.01))
-
-plt.plot(xvalues, yvalues, '--^')
-plt.plot([points["x"][0], points["x"][1]], [points["y"][0], 0], '-->')
-plt.plot([points["x"][1], points["x"][1]], [0, points["y"][1]], '--v')
-plt.plot([points["x"][1], points["x"][0]], [points["y"][1], 0], '--<')
-
-plt.xticks(np.arange(-0.5, 0.6, step=0.1))
-plt.grid(True)
-plt.show()
+#a = -1.0/math.sqrt(5)
+#b = 1.0/math.sqrt(5)
+#x, points = newton(f, f_prime, f_prime_sec, a, b)
+#print(points["x"][:2], points["y"][:2])
+#xvalues = [points['x'][0], points['x'][0]]
+#yvalues = [0, points['y'][0]]
+#
+#plt.plot([x / 10.0 for x in range(-5, 7)],
+#         [f(x / 10.0) for x in range(-5, 7)],
+#         'b-', label=r"x^3 - x")
+#
+#plt.plot(points['x'][0], 0, 'ro')
+#plt.annotate(r"$x_0$", xy=(points['x'][0], 0), xytext=(points['x'][0], 0+0.01))
+#plt.plot(points['x'][0], points["y"][0], 'ro')
+#plt.annotate(r"$f(x_0)$", xy=(points['x'][0], points["y"][0]),
+#             xytext=(points['x'][0], points["y"][0]+0.01))
+#
+#plt.plot(points['x'][1], 0, 'ro')
+#plt.annotate(r"$x_1$", xy=(points['x'][1], 0), xytext=(points['x'][1], 0+0.01))
+#plt.plot(points['x'][1], points["y"][1], 'ro')
+#plt.annotate(r"$f(x_1)$", xy=(points['x'][0], points["y"][1]),
+#             xytext=(points['x'][1], points["y"][1]+0.01))
+#
+#plt.plot(xvalues, yvalues, '--^')
+#plt.plot([points["x"][0], points["x"][1]], [points["y"][0], 0], '-->')
+#plt.plot([points["x"][1], points["x"][1]], [0, points["y"][1]], '--v')
+#plt.plot([points["x"][1], points["x"][0]], [points["y"][1], 0], '--<')
+#
+#plt.xticks(np.arange(-0.5, 0.6, step=0.1))
+#plt.grid(True)
+#plt.show()
