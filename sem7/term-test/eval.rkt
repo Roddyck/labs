@@ -1,0 +1,633 @@
+;;
+;; Based on eval.scm from the MIT 6.037 course.
+;; https://web.mit.edu/6.001/6.037/eval.scm
+;;
+
+#lang racket
+(require r5rs)
+;; Tell DrRacket to print mutable pairs using the compact syntax for
+;; ordinary pairs.
+(print-as-expression #f)
+(print-mpair-curly-braces #f)
+
+(define first car)
+(define second cadr)
+(define third caddr)
+(define fourth cadddr)
+(define (fifth lst) (car (cddddr lst)))
+(define rest cdr)
+
+(define (tagged-list? exp tag)
+  (and (pair? exp) (eq? (car exp) tag)))
+
+(define (self-evaluating? exp)
+  (cond ((number? exp) #t)
+        ((string? exp) #t)
+        ((boolean? exp) #t)
+        (else #f)))
+
+(define (quoted? exp) (tagged-list? exp 'quote))
+(define (text-of-quotation exp) (cadr exp))
+
+(define (variable? exp) (symbol? exp))
+(define (assignment? exp) (tagged-list? exp 'set!))
+(define (assignment-variable exp) (cadr exp))
+(define (assignment-value exp) (caddr exp))
+(define (make-assignment var expr)
+  (list 'set! var expr))
+
+(define (definition? exp) (tagged-list? exp 'define))
+(define (definition-variable exp)
+  (if (symbol? (cadr exp))   (cadr exp)   (caadr exp)))
+(define (definition-value exp)
+  (if (symbol? (cadr exp))
+      (caddr exp)
+      (make-lambda (cdadr exp) (cddr exp))))  ; formal params, body
+(define (make-define var expr)
+  (list 'define var expr))
+
+(define (lambda? exp) (tagged-list? exp 'lambda))
+(define (lambda-parameters lambda-exp) (cadr lambda-exp))
+(define (lambda-body lambda-exp) (cddr lambda-exp))
+(define (make-lambda parms body) (cons 'lambda (cons parms body)))
+
+(define (if? exp) (tagged-list? exp 'if))
+(define (if-predicate exp) (cadr exp))
+(define (if-consequent exp) (caddr exp))
+(define (if-alternative exp) (cadddr exp))
+(define (make-if pred conseq alt) (list 'if pred conseq alt))
+
+(define (cond? exp) (tagged-list? exp 'cond))
+(define (cond-clauses exp) (cdr exp))
+(define first-cond-clause car)
+(define rest-cond-clauses cdr)
+(define (make-cond seq) (cons 'cond seq))
+
+(define (let? expr) (tagged-list? expr 'let))
+(define (let-bound-variables expr) (map first (second expr)))
+(define (let-values expr) (map second (second expr)))
+(define (let-body expr) (cddr expr))
+(define (make-let var-val-pairs body)
+  (cons 'let (cons var-val-pairs body)))
+
+(define (begin? exp) (tagged-list? exp 'begin))
+(define (begin-actions begin-exp) (cdr begin-exp))
+(define (last-exp? seq) (null? (cdr seq)))
+(define (first-exp seq) (car seq))
+(define (rest-exps seq) (cdr seq))
+(define (sequence->exp seq)
+  (cond ((null? seq) seq)
+        ((last-exp? seq) (first-exp seq))
+        (else (make-begin seq))))
+(define (make-begin exp) (cons 'begin exp))
+
+(define (application? exp) (pair? exp))
+(define (operator app) (car app))
+(define (operands app) (cdr app))
+(define (no-operands? args) (null? args))
+(define (first-operand args) (car args))
+(define (rest-operands args) (cdr args))
+(define (make-application rator rands)
+  (cons rator rands))
+
+(define (time? exp) (tagged-list? exp 'time))
+
+
+;;;;;;;;;;;;;;;;; Начало вставки ;;;;;;;;;;;;;;;;;
+(define (let*? exp) (tagged-list? exp 'let*))
+(define (let*-bound-variables exp) (map first (second exp)))
+(define (let*-values exp) (map second (second exp)))
+(define (let*-body exp) (cddr exp))
+(define (make-let* var-val-pairs body)
+  (cons 'let* (cons var-val-pairs body)))
+;;;;;;;;;;;;;;;;; Конец  вставки ;;;;;;;;;;;;;;;;;
+
+;;
+;; this section is the actual implementation of meval
+;;
+
+(define (meval exp) (m-eval exp the-global-environment))
+
+(define (m-eval exp env)
+  (cond [(self-evaluating? exp) exp]
+        ((variable? exp) (lookup-variable-value exp env))
+        [(quoted? exp) (text-of-quotation exp)]
+        [(assignment? exp) (eval-assignment exp env)]
+        [(definition? exp) (eval-definition exp env)]
+        [(if? exp) (eval-if exp env)]
+        [(lambda? exp) (make-procedure (lambda-parameters exp) (lambda-body exp) env)]
+        [(begin? exp) (eval-sequence (begin-actions exp) env)]
+        [(cond? exp) (m-eval (cond->if exp) env)]
+        [(let? exp) (m-eval (let->application exp) env)]
+        ;;;;;;;;;;;;;;;;; Начало вставки ;;;;;;;;;;;;;;;;;
+        [(let*? exp) (m-eval (let*->let exp) env)]
+        ;;;;;;;;;;;;;;;;; Конец  вставки ;;;;;;;;;;;;;;;;;
+        [(time? exp) (time (m-eval (second exp) env))]
+        [(application? exp)
+         (m-apply (m-eval (operator exp) env)
+                  (list-of-values (operands exp) env))]
+        [else (error "Unknown expression type -- EVAL" exp)]))
+
+(define (m-apply procedure arguments)
+  (cond [(primitive-procedure? procedure)
+         (apply-primitive-procedure procedure arguments)]
+        [(compound-procedure? procedure)
+         (eval-sequence
+          (procedure-body procedure)
+          (extend-environment (make-frame (procedure-parameters procedure)
+                                          arguments)
+                              (procedure-environment procedure)))]
+        [else (error "Unknown procedure type -- APPLY" procedure)]))
+
+(define (list-of-values exps env)
+  (cond ((no-operands? exps) '())
+        (else (cons (m-eval (first-operand exps) env)
+                    (list-of-values (rest-operands exps) env)))))
+
+(define (eval-if exp env)
+  (if (m-eval (if-predicate exp) env)
+      (m-eval (if-consequent exp) env)
+      (m-eval (if-alternative exp) env)))
+
+
+(define (eval-sequence exps env)
+  (cond ((last-exp? exps) (m-eval (first-exp exps) env))
+        (else (m-eval (first-exp exps) env)
+              (eval-sequence (rest-exps exps) env))))
+
+(define (eval-assignment exp env)
+  (set-variable-value! (assignment-variable exp)
+                       (m-eval (assignment-value exp) env)
+                       env))
+
+(define (eval-definition exp env)
+  (define-variable! (definition-variable exp)
+    (m-eval (definition-value exp) env)
+    env))
+
+(define (let->application expr)
+  (let ((names (let-bound-variables expr))
+        (values (let-values expr))
+        (body (let-body expr)))
+    (make-application (make-lambda names body)
+                      values)))
+
+(define (cond->if expr)
+  (let ((clauses (cond-clauses expr)))
+    (if (null? clauses)
+        #f
+        (if (eq? (car (first-cond-clause clauses)) 'else)
+            (sequence->exp (cdr (first-cond-clause clauses)))
+            (make-if (car (first-cond-clause clauses))
+                     (sequence->exp (cdr (first-cond-clause clauses)))
+                     (make-cond (rest-cond-clauses clauses)))))))
+
+(define input-prompt ";;; M-Eval input level ")
+(define output-prompt ";;; M-Eval value:")
+
+(define (driver-loop) (repl #f))
+
+(define (repl port)
+  (if port #f (prompt-for-input input-prompt))
+  (let ((input (if port (read port) (read))))
+    (cond ((eof-object? input)   'meval-done)
+          ((eq? input '**quit**) 'meval-done)
+          (else
+           (let ((output (m-eval input the-global-environment)))
+             (if port #f (begin
+                           (announce-output output-prompt)
+                           (pretty-display output)))
+             (repl port))))))
+
+(define (prompt-for-input string)
+  (newline) (newline) (display string) (display meval-depth) (newline))
+
+(define (announce-output string)
+  (newline) (display string) (newline))
+
+
+;;;;;;;;;;;;;;;;; Начало вставки ;;;;;;;;;;;;;;;;;
+
+#|
+В общем случае выражение вида:
+(let* ([x1 exp1]
+       ...
+       [xn expn])
+  body)
+
+Переводим в:
+(let ([x1 exp1])
+  ...
+    (let ([xn expn])
+      body))
+
+Тесты в конце файла.
+|#
+
+(define (let*->let exp)
+  (define (loop vars vals body)
+    (cond
+      [(empty? vars) (make-let '() body)]
+      [(empty? (rest vars)) (make-let (list (list (first vars) (first vals))) body)]
+      [else (make-let
+             (list (list (first vars) (first vals)))
+             (list (loop (rest vars) (rest vals) body)))]))
+
+  (let ([vars (let*-bound-variables exp)]
+        [vals (let*-values exp)]
+        [body (let*-body exp)])
+    (loop vars vals body)))
+
+;;;;;;;;;;;;;;;;; Конец  вставки ;;;;;;;;;;;;;;;;;
+
+
+;;
+;;
+;; implementation of meval environment model
+;;
+
+; double bubbles
+(define (make-procedure parameters body env)
+  (list 'procedure parameters body env))
+(define (compound-procedure? proc)
+  (tagged-list? proc 'procedure))
+(define (procedure-parameters proc) (second proc))
+(define (procedure-body proc) (third proc))
+(define (procedure-environment proc) (fourth proc))
+
+
+; bindings
+(define (make-binding var val)
+  (list 'binding var val))
+(define (binding? b)
+  (tagged-list? b 'binding))
+(define (binding-variable binding)
+  (if (binding? binding)
+      (second binding)
+      (error "Not a binding: " binding)))
+(define (binding-value binding)
+  (if (binding? binding)
+      (third binding)
+      (error "Not a binding: " binding)))
+(define (set-binding-value! binding val)
+  (if (binding? binding)
+      (set-car! (cddr binding) val)
+      (error "Not a binding: " binding)))
+
+; frames
+(define (make-frame variables values)
+  (define (make-frame-bindings rest-vars rest-vals)
+    (cond ((and (null? rest-vars) (null? rest-vals))
+           '())
+          ((null? rest-vars)
+           (error "Too many args supplied" variables values))
+          ((symbol? rest-vars)
+           (list (make-binding rest-vars rest-vals)))
+          ((null? rest-vals)
+           (error "Too few args supplied" variables values))
+          (else
+           (cons (make-binding (car rest-vars) (car rest-vals))
+                 (make-frame-bindings (cdr rest-vars) (cdr rest-vals))))))
+  (make-frame-from-bindings (make-frame-bindings variables values)))
+
+(define (make-frame-from-bindings list-of-bindings)
+  (cons 'frame list-of-bindings))
+
+(define (frame? frame)
+  (tagged-list? frame 'frame))
+(define (frame-variables frame)
+  (if (frame? frame)
+      (map binding-variable (cdr frame))
+      (error "Not a frame: " frame)))
+(define (frame-values frame)
+  (if (frame? frame)
+      (map binding-value (cdr frame))
+      (error "Not a frame: " frame)))
+(define (add-binding-to-frame! binding frame)
+  (if (frame? frame)
+      (if (binding? binding)
+          (set-cdr! frame (cons binding (cdr frame)))
+          (error "Not a binding: " binding))
+      (error "Not a frame: " frame)))
+(define (find-in-frame var frame)
+  (define (search-helper var bindings)
+    (if (null? bindings)
+        #f
+        (if (eq? var (binding-variable (first bindings)))
+            (first bindings)
+            (search-helper var (rest bindings)))))
+  (if (frame? frame)
+      (search-helper var (cdr frame))
+      (error "Not a frame: " frame)))
+
+; environments
+(define the-empty-environment '(environment))
+(define (extend-environment frame base-env)
+  (if (environment? base-env)
+      (if (frame? frame)
+          (list 'environment frame base-env)
+          (error "Not a frame: " frame))
+      (error "Not an environment: " base-env)))
+(define (environment? env)
+  (tagged-list? env 'environment))
+(define (enclosing-environment env)
+  (if (environment? env)
+      (if (eq? the-empty-environment env)
+          (error "No enclosing environment of the empty environment")
+          (third env))
+      (error "Not an environment: " env)))
+(define (environment-first-frame env)
+  (if (environment? env)
+      (second env)
+      (error "Not an environment: " env)))
+(define (find-in-environment var env)
+  (if (eq? env the-empty-environment)
+      #f
+      (let ((frame (environment-first-frame env)))
+        (let ((binding (find-in-frame var frame)))
+          (if binding
+              binding
+              (find-in-environment var (enclosing-environment env)))))))
+
+; name rule
+(define (lookup-variable-value var env)
+  (let ((binding (find-in-environment var env)))
+    (if binding
+        (binding-value binding)
+        (error "Unbound variable -- LOOKUP" var))))
+
+(define (set-variable-value! var val env)
+  (let ((binding (find-in-environment var env)))
+    (if binding
+        (set-binding-value! binding val)
+        (error "Unbound variable -- SET" var))))
+
+(define (define-variable! var val env)
+  (let ((frame (environment-first-frame env)))
+    (let ((binding (find-in-frame var frame)))
+      (if binding
+          (set-binding-value! binding val)
+          (add-binding-to-frame!
+           (make-binding var val)
+           frame)))))
+
+; primitives procedures - hooks to underlying Scheme procs
+(define (make-primitive-procedure implementation)
+  (list 'primitive implementation))
+(define (primitive-procedure? proc) (tagged-list? proc 'primitive))
+(define (primitive-implementation proc) (cadr proc))
+(define (primitive-procedures)
+  (list (list 'car car)
+        (list 'cdr cdr)
+        (list 'cons cons)
+        (list 'list list)
+        (list 'set-car! set-car!)
+        (list 'set-cdr! set-cdr!)
+        (list 'null? null?)
+        (list 'zero? zero?)
+        (list 'add1 add1)
+        (list 'sub1 sub1)
+        (list '+ +)
+        (list '* *)
+        (list '- -)
+        (list '< <)
+        (list '<= <=)
+        (list '> >)
+        (list '>= >=)
+        (list '= =)
+        (list 'zero? zero?)
+        (list 'display display)
+        (list 'displayln displayln)
+        (list 'not not)
+        (list 'member member)
+        (list 'apply m-apply)))
+; ... more primitives
+
+
+(define (primitive-procedure-names) (map car (primitive-procedures)))
+
+(define (primitive-procedure-objects)
+  (map make-primitive-procedure (map cadr (primitive-procedures))))
+
+(define (apply-primitive-procedure proc args)
+  (apply (primitive-implementation proc) args))
+
+(define (additional-definitions)
+  (list '(define (map f lst)
+           (if (null? lst)
+               '()
+               (cons (f (car lst)) (map f (cdr lst)))))
+        '(define (apply-n f x n)
+           (if (zero? n)
+               x
+               (f (apply-n f x (sub1 n)))))
+        '(define church-zero (lambda (s z) z))
+        '(define (nat-to-church n)
+           (lambda (s z)
+             (apply-n s z n)))
+        '(define (church-to-nat n) (n add1 0))
+        '(define (plus m) (lambda (n) (lambda (s z) (m s (n s z)))))
+        '(define (times m) (lambda (n) (m (plus n) church-zero)))
+        '(define (bin op m n)
+           (let ([mc (nat-to-church m)]
+                 [nc (nat-to-church n)])
+             (church-to-nat ((op mc) nc))))))
+
+(define (setup-environment)
+  (let ([env1 (extend-environment (make-frame (primitive-procedure-names)
+                                              (primitive-procedure-objects))
+                                  the-empty-environment)])
+    (let ([env2 (extend-environment (make-frame '() '()) env1)])
+      (eval-sequence (additional-definitions) env2)
+      env2)))
+
+(define the-global-environment (setup-environment))
+(define tge the-global-environment) ; Синоним для краткости.
+
+;;;;;;;; Code necessary for question 6
+;;
+;; This section doesn't contain any user-servicable parts -- you
+;; shouldn't need to edit it for any of the questions on the project,
+;; including question 5.  However, if you're curious, comments provide a
+;; rough outline of what it does.
+
+;; Keep track of what depth we are into nesting
+(define meval-depth 1)
+
+;; These procedures are needed to make it possible to run inside meval
+(define additional-primitives
+  (list (list 'eof-object?      eof-object?)
+        (list 'read             read)
+        (list 'read-line        read-line)
+        (list 'open-input-file  open-input-file)
+        (list 'this-expression-file-name
+              (lambda () (this-expression-file-name)))
+        (list 'pretty-display   pretty-display)
+        (list 'error            error)))
+(define stubs
+  '(require r5rs mzlib/etc print-as-expression print-mpair-curly-braces))
+(define additional-names (map first additional-primitives))
+(define additional-values (map make-primitive-procedure
+                               (map second additional-primitives)))
+
+(require mzlib/etc)
+(define (load-meval-defs)
+  ;; Jam some additional bootstrapping structures into the global
+  ;; environment
+  (set! the-global-environment
+        (extend-environment
+         (make-frame stubs
+                     (map (lambda (name)
+                            (m-eval '(lambda (x) x) the-global-environment)) stubs))
+         (extend-environment
+          (make-frame additional-names
+                      additional-values)
+          the-global-environment)))
+  ;; Open this file for reading
+  (let ((stream (open-input-file (this-expression-file-name))))
+    (read-line stream) ;; strip off "#lang racket" line
+    (repl stream))     ;; feed the rest of the definitions into meval
+
+  ;; Update the meval-depth variable inside the environment we're simulating
+  (set-variable-value! 'meval-depth (+ meval-depth 1) the-global-environment)
+  'loaded)
+
+;;;;;;;;;;;;;;;;; Начало вставки ;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;; Tests ;;;;;;;;;;;;;;;;;;
+
+; command to run tests is `raco test eval.rkt`
+
+(require rackunit rackunit/text-ui)
+
+(define make-let*-tests
+  (test-suite
+   "Test make-let* function"
+
+   (check-equal? (make-let* `((x 1)) `((+ x y)))
+                 (list 'let* `([x 1]) `(+ x y))
+                 "test one binding and one expression")
+
+   (check-equal? (make-let* `([x 1] [y 2]) `((+ x y) (- x y)))
+                 (list 'let* `([x 1] [y 2]) `(+ x y) `(- x y))
+                 "test multiple bindings and multiple expressions")
+
+   (check-equal? (make-let* `() `((+ x y)))
+                 (list 'let* '() `(+ x y))
+                 "test no bindings")))
+
+(define let*?-predicate-tests
+  (test-suite
+   "Test let*? predicate"
+
+   (check-pred let*? (make-let* `([x 1]) `(+ x y))
+               "let* with one binding")
+
+   (check-pred let*? (make-let* `([x 1] [y 2]) `(+ x y))
+               "let* with multiple bindings")
+
+   (check-pred let*? (make-let* `() `(+ x y))
+               "let* with no bindings")))
+
+(define let*-bound-variables-tests
+  (test-suite
+   "Test let*-bound-variables function"
+
+   (check-equal? (let*-bound-variables (make-let* `([x 1]) `(+ x y)))
+                 '(x)
+                 "test one bound variable")
+
+   (check-equal? (let*-bound-variables (make-let* `([x 1] [y 2]) `(+ x y)))
+                 `(x y)
+                 "test multiple bound variables")
+
+   (check-equal? (let*-bound-variables (make-let* `() `(+ x y)))
+                 '()
+                 "test no bound variables")))
+
+(define let*-values-tests
+  (test-suite
+   "Test let*-values function"
+
+   (check-equal? (let*-values (make-let* `([x 1]) `(+ x y)))
+                 '(1)
+                 "test one bound variable")
+
+   (check-equal? (let*-values (make-let* `([x 1] [y 2]) `(+ x y)))
+                 '(1 2)
+                 "test multiple bound variables")
+
+   (check-equal? (let*-values (make-let* `() `(+ x y)))
+                 '()
+                 "test no bound variables")))
+
+(define let*-body-tests
+  (test-suite
+   "Test let*-body function"
+
+   (check-equal? (let*-body (make-let* `([x 1]) `((+ x y))))
+                 (list `(+ x y))
+                 "test one expression")
+
+   (check-equal? (let*-body (make-let* `([x 1] [y 2]) `((+ x y) (- x y))))
+                 (list `(+ x y) `(- x y))
+                 "test multiple expressions")))
+
+
+(define let*->let-tests
+  (test-suite
+   "Test let*->let function"
+
+   (test-case
+    "test simple let* expression"
+    (let* ([exp (make-let* `([x 1]) `((+ x y)))]
+           [expected (list 'let `([x 1]) `(+ x y))]
+           [actual (let*->let exp)])
+      (check-equal? actual expected)))
+
+   (test-case
+    "test let* with no vars"
+    (let* ([exp (make-let* `() `((+ x y)))]
+           [expected (list 'let `() `(+ x y))]
+           [actual (let*->let exp)])
+      (check-equal? actual expected)))
+
+   (test-case
+    "test let* with multiple vars"
+    (let* ([exp (make-let* `([x 1] [y 1]) `((+ x y)))]
+           [expected (list 'let `([x 1]) (list 'let `([y 1]) `(+ x y)))]
+           [actual (let*->let exp)])
+      (check-equal? actual expected)))
+   (test-case
+     "test let* with multiple bodys"
+     (let* ([exp (make-let* `([x 1] [y 1]) `((+ x y) (+ x y)))]
+            [expected (list 'let `([x 1]) (list 'let `([y 1]) `(+ x y) `(+ x y)))]
+            [actual (let*->let exp)])
+       (check-equal? actual expected)))))
+
+(define let*-eval-tests
+  (test-suite
+   "Test let* evaluation using meval function"
+
+   (check-equal? (meval `(let* ([x 1]) x))
+                 1
+                 "test simple let* expression")
+
+   (check-equal? (meval `(let* ([x 1] [y 2]) (+ x y)))
+                 3
+                 "test let* with multiple bindings")
+
+   (check-equal? (meval `(let* ([x 1] [y (+ x 2)]) (list x y)))
+                 '(1 3)
+                 "test let* nested binding")))
+
+(module+ test
+  (run-tests make-let*-tests 'verbose)
+  (run-tests let*?-predicate-tests 'verbose)
+  (run-tests let*-bound-variables-tests 'verbose)
+  (run-tests let*-values-tests 'verbose)
+  (run-tests let*-body-tests 'verbose)
+  (run-tests let*->let-tests 'verbose)
+  (run-tests let*-eval-tests 'verbose))
+
+;;;;;;;;;;;;;;;;; Конец  вставки ;;;;;;;;;;;;;;;;;
