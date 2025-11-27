@@ -598,12 +598,13 @@
            [expected (list 'let `([x 1]) (list 'let `([y 1]) `(+ x y)))]
            [actual (let*->let exp)])
       (check-equal? actual expected)))
+
    (test-case
-     "test let* with multiple bodys"
-     (let* ([exp (make-let* `([x 1] [y 1]) `((+ x y) (+ x y)))]
-            [expected (list 'let `([x 1]) (list 'let `([y 1]) `(+ x y) `(+ x y)))]
-            [actual (let*->let exp)])
-       (check-equal? actual expected)))))
+    "test let* with multiple bodys"
+    (let* ([exp (make-let* `([x 1] [y 1]) `((+ x y) (+ x y)))]
+           [expected (list 'let `([x 1]) (list 'let `([y 1]) `(+ x y) `(+ x y)))]
+           [actual (let*->let exp)])
+      (check-equal? actual expected)))))
 
 (define let*-eval-tests
   (test-suite
