@@ -95,8 +95,7 @@
 
 ;;;;;;;;;;;;;;;;; Начало вставки ;;;;;;;;;;;;;;;;;
 (define (let*? exp) (tagged-list? exp 'let*))
-(define (let*-bound-variables exp) (map first (second exp)))
-(define (let*-values exp) (map second (second exp)))
+(define (let*-var-val-pairs exp) (second exp))
 (define (let*-body exp) (cddr exp))
 (define (make-let* var-val-pairs body)
   (cons 'let* (cons var-val-pairs body)))
@@ -225,18 +224,17 @@
 |#
 
 (define (let*->let exp)
-  (define (loop vars vals body)
+  (define (loop var-val-pairs body)
     (cond
-      [(empty? vars) (make-let '() body)]
-      [(empty? (rest vars)) (make-let (list (list (first vars) (first vals))) body)]
+      [(empty? var-val-pairs) (make-let '() body)]
+      [(empty? (rest var-val-pairs)) (make-let var-val-pairs body)]
       [else (make-let
-             (list (list (first vars) (first vals)))
-             (list (loop (rest vars) (rest vals) body)))]))
+             (list (first var-val-pairs))
+             (list (loop (rest var-val-pairs) body)))]))
 
-  (let ([vars (let*-bound-variables exp)]
-        [vals (let*-values exp)]
+  (let ([var-val-pairs (let*-var-val-pairs exp)]
         [body (let*-body exp)])
-    (loop vars vals body)))
+    (loop var-val-pairs body)))
 
 ;;;;;;;;;;;;;;;;; Конец  вставки ;;;;;;;;;;;;;;;;;
 
@@ -529,37 +527,22 @@
    (check-pred let*? (make-let* `() `(+ x y))
                "let* with no bindings")))
 
-(define let*-bound-variables-tests
+(define let*-var-val-pairs-tests
   (test-suite
-   "Test let*-bound-variables function"
+    "Test let*-var-val-pairs function"
 
-   (check-equal? (let*-bound-variables (make-let* `([x 1]) `(+ x y)))
-                 '(x)
-                 "test one bound variable")
+    (check-equal? (let*-var-val-pairs (make-let* `([x 1]) `((+ x y))))
+                  `([x 1])
+                  "test one binding")
 
-   (check-equal? (let*-bound-variables (make-let* `([x 1] [y 2]) `(+ x y)))
-                 `(x y)
-                 "test multiple bound variables")
+    (check-equal? (let*-var-val-pairs (make-let* `([x 1] [y 2]) `((+ x y))))
+                  `([x 1] [y 2])
+                  "test multiple binding")
 
-   (check-equal? (let*-bound-variables (make-let* `() `(+ x y)))
-                 '()
-                 "test no bound variables")))
+    (check-equal? (let*-var-val-pairs (make-let* `() `((+ x y))))
+                  '()
+                  "test no bindings")))
 
-(define let*-values-tests
-  (test-suite
-   "Test let*-values function"
-
-   (check-equal? (let*-values (make-let* `([x 1]) `(+ x y)))
-                 '(1)
-                 "test one bound variable")
-
-   (check-equal? (let*-values (make-let* `([x 1] [y 2]) `(+ x y)))
-                 '(1 2)
-                 "test multiple bound variables")
-
-   (check-equal? (let*-values (make-let* `() `(+ x y)))
-                 '()
-                 "test no bound variables")))
 
 (define let*-body-tests
   (test-suite
@@ -583,7 +566,7 @@
     (let* ([exp (make-let* `([x 1]) `((+ x y)))]
            [expected (list 'let `([x 1]) `(+ x y))]
            [actual (let*->let exp)])
-      (check-equal? actual expected)))
+     (check-equal? actual expected)))
 
    (test-case
     "test let* with no vars"
@@ -610,23 +593,31 @@
   (test-suite
    "Test let* evaluation using meval function"
 
-   (check-equal? (meval `(let* ([x 1]) x))
+   (check-equal? (meval (make-let* `([x 1]) `(x)))
                  1
                  "test simple let* expression")
 
-   (check-equal? (meval `(let* ([x 1] [y 2]) (+ x y)))
+   (check-equal? (meval (make-let* `([x 1] [y 2]) `((+ x y))))
                  3
                  "test let* with multiple bindings")
 
-   (check-equal? (meval `(let* ([x 1] [y (+ x 2)]) (list x y)))
+   (check-equal? (meval (make-let* `([x 1] [y (+ x 2)]) `((list x y))))
                  '(1 3)
-                 "test let* nested binding")))
+                 "test let* nested binding")
+
+   ; should raise an exception as x and y are not defined
+   (check-exn
+     exn:fail?
+     (lambda () (meval (make-let* '() `((+ x y))))))
+
+   (check-equal? (meval (make-let* '() '(1)))
+                 1
+                 "test let* with no bindings")))
 
 (module+ test
   (run-tests make-let*-tests 'verbose)
   (run-tests let*?-predicate-tests 'verbose)
-  (run-tests let*-bound-variables-tests 'verbose)
-  (run-tests let*-values-tests 'verbose)
+  (run-tests let*-var-val-pairs-tests 'verbose)
   (run-tests let*-body-tests 'verbose)
   (run-tests let*->let-tests 'verbose)
   (run-tests let*-eval-tests 'verbose))
